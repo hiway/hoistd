@@ -15,8 +15,17 @@ Options:
 import strutils
 import docopt
 import terminal
+import asyncdispatch
+import asyncnet
+import strutils
+import jester
+import htmlgen
+import cgi
+import logging
+
 
 let args = docopt(doc, version = "0.1.0")
+
 
 proc error(msg: string) =
   styledWriteLine(stderr, fgRed, "ERROR: ", resetStyle, msg)
@@ -25,6 +34,19 @@ proc info(msg: string) =
   styledWriteLine(stdout, fgBlue, "INFO: ", resetStyle, msg)
 
 
-info "path: " & $args["--path"]
-info "endpoint: https://" & $args["--bind"] & ":" & $args["--port"]
-info "Hoisted!"
+settings:
+  port = Port(parseInt($args["--port"]))
+  bind_addr = $args["--bind"]
+
+
+routes:
+  get "/":
+    resp "Hello, world."
+
+
+proc main() =
+  info "path: " & $args["--path"]
+  info "hoisted at: https://" & $args["--bind"] & ":" & $args["--port"]
+  runForever()
+
+main()

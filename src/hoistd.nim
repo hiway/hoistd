@@ -1,5 +1,5 @@
 let doc = """
-Hoist Directory
+hoistd
 
 Usage:
   hoistd [options]
@@ -15,6 +15,7 @@ Options:
   --tor-port=<tp>         Tor controller port [default: 9051].
   --tor-persist           Create/use key for a persistent .onion address.
   --tor-key=<kp>          Save/load Tor service key to this path [default: ~/.hoistd].
+  --tor-password=<file>   File containing Tor controller password, if using passwordhash.
 """
 
 import strutils
@@ -40,6 +41,8 @@ let tor_host = $args["--tor-host"]
 let tor_port = Port(parseInt($args["--tor-port"]))
 let tor_persist = args["--tor-persist"]
 let tor_key_file = $args["--tor-key"]
+let tor_password = if $args["--tor-password"] != "": readFile($args["--tor-password"]).strip() else: ""
+
 
 
 proc error(msg: string, hint: string = "") =
@@ -50,12 +53,10 @@ proc info(msg: string, hint: string = "") =
   styledWriteLine(stdout, fgBlue, "INFO ", resetStyle, msg, fgBlue, hint, resetStyle)
 
 
-proc tor_create_hidden_service(sock: AsyncSocket): Future[string] {.async.} =
+proc tor_create_hidden_service(sock: AsyncSocket): Future[string] {.gcsafe, async.} =
   await sock.send("ADD_ONION NEW:BEST Port=80," & endpoint & ":" & $port & "\r\L")
   let addr_line = await sock.recvLine()
-  result = "http://"
-  result.add(addr_line[addr_line.find("=") + 1 .. ^1])
-  result.add(".onion")
+  result = "http://" & addr_line[addr_line.find("=") + 1 .. ^1] & ".onion"
   let tor_key_response = await sock.recvLine()
   if tor_persist == true:
     info "PERSISTING hidden service."
@@ -65,7 +66,7 @@ proc tor_create_hidden_service(sock: AsyncSocket): Future[string] {.async.} =
     info "EPHEMERAL hidden service."
 
 
-proc tor_start_hidden_service(sock: AsyncSocket): Future[string] {.async.} =
+proc tor_start_hidden_service(sock: AsyncSocket): Future[string] {.gcsafe, async.} =
   # let tor_key = readFile(tor_key_file)
   let tor_key = execProcess("cat " & tor_key_file).strip()
   if tor_key.find("file or directory") != -1:
@@ -74,33 +75,41 @@ proc tor_start_hidden_service(sock: AsyncSocket): Future[string] {.async.} =
   let tor_command = "ADD_ONION " & $tor_key & " Port=80," & endpoint & ":" & $port & "\r\L"
   await sock.send(tor_command)
   let addr_line = await sock.recvLine()
-  result = "http://"
-  result.add(addr_line[addr_line.find("=") + 1 .. ^1])
-  result.add(".onion")
+  result = "http://" & addr_line[addr_line.find("=") + 1 .. ^1] & ".onion"
 
 
-proc tor_authenticate(sock: AsyncSocket) {.async.} =
+proc tor_authenticate(sock: AsyncSocket, password = "") {.gcsafe, async.} =
   await sock.send("PROTOCOLINFO\r\L")
   discard await sock.recvLine() # 250-PROTOCOLINFO 1
   # 250-AUTH METHODS=COOKIE,SAFECOOKIE,HASHEDPASSWORD COOKIEFILE="/usr/local/var/lib/tor/control_auth_cookie"
   let protocol_info = await sock.recvLine()
-  if protocol_info.find("COOKIE") < 0:
-    error "Cookie authentication not enabled.", "Set 'CookieAuthentication 1' in your 'torrc' file."
   discard await sock.recvLine()
   discard await sock.recvLine()
-  let tor_cookie_file = protocol_info[protocol_info.find("COOKIEFILE") + 12 .. ^2]   # /usr/local/var/lib/tor/control_auth_cookie
-  let cmd = """hexdump -e '32/1 "%02x""\n"' """ & tor_cookie_file
-  let outp = execProcess(cmd)
-  await sock.send("AUTHENTICATE " & $outp.strip & "\r\L")
+
+  if password != "":
+    if  protocol_info.find("HASHEDPASSWORD") < 0:
+      error "Password provided, but authentication not enabled.", "Set 'CookieAuthentication 1' in your 'torrc' file."
+      # todo: exit.
+    info "Password auth."
+    await sock.send("AUTHENTICATE \"" & password & "\"\r\L")
+  else:
+    if protocol_info.find("COOKIE") < 0:
+      error "Cookie authentication not enabled.", "Set 'CookieAuthentication 1' in your 'torrc' file."
+      # todo: exit.
+    info "Cookie auth."
+    let tor_cookie_file = protocol_info[protocol_info.find("COOKIEFILE") + 12 .. ^2]   # /usr/local/var/lib/tor/control_auth_cookie
+    let cmd = """hexdump -e '32/1 "%02x""\n"' """ & tor_cookie_file
+    let outp = execProcess(cmd)
+    await sock.send("AUTHENTICATE " & $outp.strip & "\r\L")
   discard await sock.recvLine()
 
 
-proc tor_start_ephemeral_hidden_service(): Future[string] {.async.} =
+proc tor_start_ephemeral_hidden_service(): Future[string] {.gcsafe, async.} =
   info "Connecting to Tor controller: ", tor_host & ":" & $tor_port
   var create_service = false
   var sock = newAsyncSocket()
   await sock.connect(tor_host, tor_port)
-  await sock.tor_authenticate()
+  await sock.tor_authenticate(tor_password)
   if tor_persist:
       result = await sock.tor_start_hidden_service()
       if result == "":
@@ -141,7 +150,7 @@ routes:
     resp app_css
 
 
-proc main() {.async.} =
+proc main() {.gcsafe, async.} =
 
   info "Directory: ", $args["--path"]
   info "Hoisted at: ", "http://" & $args["--bind"] & ":" & $args["--port"]

@@ -48,12 +48,6 @@ proc info(msg: string, hint: string = "") =
   styledWriteLine(stdout, fgBlue, "INFO ", resetStyle, msg, fgBlue, hint, resetStyle)
 
 
-proc recvAll(sock: AsyncSocket) {.async.} =
-  for i in 0 .. 50:
-    var ret = await recv(sock, 100)
-    echo ret
-
-
 proc tor_create_ephemeral_hidden_service() {.async.} =
   info "Connecting to Tor controller: ", tor_host & ":" & $tor_port
   var site_created = false

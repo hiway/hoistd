@@ -11,4 +11,5 @@ Tasks:
 - Download files from index. [ok]
 - Hoist on Tor as hidden service. [ok]
 - TLS on local web server. [pending]
+- Basic Authentication. [pending]
 - ...

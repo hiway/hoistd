@@ -88,7 +88,7 @@ proc tor_authenticate(sock: AsyncSocket, password = "") {.gcsafe, async.} =
 
   if password != "":
     if  protocol_info.find("HASHEDPASSWORD") < 0:
-      error "Password provided, but authentication not enabled.", "Set 'CookieAuthentication 1' in your 'torrc' file."
+      error "Password provided, but authentication not enabled.", "Set 'HashedControlPassword' in your 'torrc' file."
       # todo: exit.
     info "Password auth."
     await sock.send("AUTHENTICATE \"" & password & "\"\r\L")

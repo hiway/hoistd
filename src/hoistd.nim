@@ -40,11 +40,11 @@ let tor_port = Port(parseInt($args["--tor-port"]))
 var onion_address = ""
 
 proc error(msg: string, hint: string = "") =
-  styledWriteLine(stdout, fgRed, "ERROR: ", resetStyle, msg, fgBlue, hint, resetStyle)
+  styledWriteLine(stdout, fgRed, "ERROR ", resetStyle, msg, fgBlue, hint, resetStyle)
 
 
 proc info(msg: string, hint: string = "") =
-  styledWriteLine(stdout, fgBlue, "INFO: ", resetStyle, msg, fgBlue, hint, resetStyle)
+  styledWriteLine(stdout, fgBlue, "INFO ", resetStyle, msg, fgBlue, hint, resetStyle)
 
 proc recvAll(sock: AsyncSocket) {.async.} =
   for i in 0 .. 50:
@@ -53,13 +53,11 @@ proc recvAll(sock: AsyncSocket) {.async.} =
 
 proc tor_create_ephemeral_hidden_service() {.async.} =
   info "Connecting to Tor controller: ", tor_host & ":" & $tor_port
-
   var site_created = false
   var sock = newAsyncSocket()
   await sock.connect(tor_host, tor_port)
   await sock.send("PROTOCOLINFO\r\L")
   discard await sock.recvLine() # 250-PROTOCOLINFO 1
-
   # 250-AUTH METHODS=COOKIE,SAFECOOKIE,HASHEDPASSWORD COOKIEFILE="/usr/local/var/lib/tor/control_auth_cookie"
   let protocol_info = await sock.recvLine()
   if protocol_info.find("COOKIE") < 0:
@@ -119,6 +117,6 @@ proc main() {.async.} =
     info "Hoisted on Tor at: ", onion_address
     info "Tor address will be reachable in a few moments."
 
-  runForever()
 
 waitFor main()
+runForever()

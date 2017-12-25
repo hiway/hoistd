@@ -6,5 +6,5 @@ installFiles = @["hoistd.nim"]
 bin = @["hoistd"]
 srcDir = "src"
 
-requires "nim >= 0.15.2", "jester", "yaml", "docopt"
+requires "nim >= 0.15.2", "jester", "docopt"
 

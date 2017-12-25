@@ -13,6 +13,8 @@ Options:
   --tor                   Connect to local Tor client and hoist a hidden service.
   --tor-host=<th>         Tor controller host [default: 127.0.0.1].
   --tor-port=<tp>         Tor controller port [default: 9051].
+  --tor-persist           Create/use key for a persistent .onion address.
+  --tor-key=<kp>          Save/load Tor service key to this path [default: ~/.hoistd].
 """
 
 import strutils
@@ -36,8 +38,8 @@ let endpoint = $args["--bind"]
 let hoist_on_tor = args["--tor"]
 let tor_host = $args["--tor-host"]
 let tor_port = Port(parseInt($args["--tor-port"]))
-
-var onion_address = ""
+let tor_persist = args["--tor-persist"]
+let tor_key_file = $args["--tor-key"]
 
 
 proc error(msg: string, hint: string = "") =
@@ -48,11 +50,36 @@ proc info(msg: string, hint: string = "") =
   styledWriteLine(stdout, fgBlue, "INFO ", resetStyle, msg, fgBlue, hint, resetStyle)
 
 
-proc tor_create_ephemeral_hidden_service() {.async.} =
-  info "Connecting to Tor controller: ", tor_host & ":" & $tor_port
-  var site_created = false
-  var sock = newAsyncSocket()
-  await sock.connect(tor_host, tor_port)
+proc tor_create_hidden_service(sock: AsyncSocket): Future[string] {.async.} =
+  await sock.send("ADD_ONION NEW:BEST Port=80," & endpoint & ":" & $port & "\r\L")
+  let addr_line = await sock.recvLine()
+  result = "http://"
+  result.add(addr_line[addr_line.find("=") + 1 .. ^1])
+  result.add(".onion")
+  let tor_key_response = await sock.recvLine()
+  if tor_persist == true:
+    info "PERSISTING hidden service."
+    let tor_key = $tor_key_response[tor_key_response.find("=") + 1 .. ^1]
+    discard execProcess("cat << EOF > " & tor_key_file & "\L" & tor_key & "\LEOF\L")
+  else:
+    info "EPHEMERAL hidden service."
+
+
+proc tor_start_hidden_service(sock: AsyncSocket): Future[string] {.async.} =
+  # let tor_key = readFile(tor_key_file)
+  let tor_key = execProcess("cat " & tor_key_file).strip()
+  if tor_key.find("file or directory") != -1:
+    result = ""
+    return
+  let tor_command = "ADD_ONION " & $tor_key & " Port=80," & endpoint & ":" & $port & "\r\L"
+  await sock.send(tor_command)
+  let addr_line = await sock.recvLine()
+  result = "http://"
+  result.add(addr_line[addr_line.find("=") + 1 .. ^1])
+  result.add(".onion")
+
+
+proc tor_authenticate(sock: AsyncSocket) {.async.} =
   await sock.send("PROTOCOLINFO\r\L")
   discard await sock.recvLine() # 250-PROTOCOLINFO 1
   # 250-AUTH METHODS=COOKIE,SAFECOOKIE,HASHEDPASSWORD COOKIEFILE="/usr/local/var/lib/tor/control_auth_cookie"
@@ -66,12 +93,22 @@ proc tor_create_ephemeral_hidden_service() {.async.} =
   let outp = execProcess(cmd)
   await sock.send("AUTHENTICATE " & $outp.strip & "\r\L")
   discard await sock.recvLine()
-  await sock.send("ADD_ONION NEW:BEST Port=80," & endpoint & ":" & $port & "\r\L")
-  let addr_line = await sock.recvLine()
-  onion_address = "http://"
-  onion_address.add(addr_line[addr_line.find("=") + 1 .. ^1])
-  onion_address.add(".onion")
-  discard await sock.recvLine()
+
+
+proc tor_start_ephemeral_hidden_service(): Future[string] {.async.} =
+  info "Connecting to Tor controller: ", tor_host & ":" & $tor_port
+  var create_service = false
+  var sock = newAsyncSocket()
+  await sock.connect(tor_host, tor_port)
+  await sock.tor_authenticate()
+  if tor_persist:
+      result = await sock.tor_start_hidden_service()
+      if result == "":
+        create_service = true
+  else:
+    create_service = true
+  if create_service:
+    result = await sock.tor_create_hidden_service()
   discard await sock.recvLine()
 
 
@@ -110,7 +147,7 @@ proc main() {.async.} =
   info "Hoisted at: ", "http://" & $args["--bind"] & ":" & $args["--port"]
 
   if hoist_on_tor == true:
-    await tor_create_ephemeral_hidden_service()
+    let onion_address = await tor_start_ephemeral_hidden_service()
     info "Hoisted on Tor at: ", onion_address
     info "Tor address will be reachable in a few moments."
 

@@ -1,0 +1,27 @@
+/* app.css */
+
+:root {
+  --bg: #f7f7f7;
+  --text: #271520;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Monaco, Menlo, monospace;
+}
+
+ h1, h2, h3, h4, h5 {
+  margin: 1em 2em;
+}
+
+ul {
+  margin: 1em 2em;
+  list-style: "🗈 ";
+}
+
+li {
+  line-height: 1.6em
+}

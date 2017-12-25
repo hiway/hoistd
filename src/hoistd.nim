@@ -47,8 +47,20 @@ routes:
     for file in walkDirRec static_path:
         file_path = file[2 .. ^1]  # Remove "./" prefix from path.
         file_list.add li(a(href=encode_url(file_path), file_path))
-    let html = html(head(`title`("hoistd")), body(h3("hoistd"), ul(file_list)))
-    resp ul(`class`="file-list", html)
+    let html = html(
+      head(
+        title("hoistd"),
+        link(href="/app.css", rel="stylesheet"),
+        ),
+      body(
+        h3("hoistd"),
+        ul(file_list))
+        )
+    resp html
+
+  get "/app.css":
+    const app_css = staticRead "app.css"
+    resp app_css
 
 
 info "path: " & $args["--path"]
